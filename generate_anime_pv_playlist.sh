@@ -107,7 +107,7 @@ while IFS=$'\t' read -r id name; do
 done <channels.tsv
 
 # build query
-q=$(echo "アニメ PV|OP|ED ${channelQuery}" | jq -Rr '@uri')
+q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング ${channelQuery}" | jq -Rr '@uri')
 
 # search
 if [ ! -f search_results.tsv ]; then
