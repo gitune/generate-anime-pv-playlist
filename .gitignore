@@ -2,3 +2,4 @@
 *.json
 *.tsv
 *.backup
+*.log
