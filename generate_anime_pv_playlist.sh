@@ -111,15 +111,16 @@ q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング ${cha
 
 # search
 if [ ! -f search_results.tsv ]; then
-    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >search_results.tsv
+    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >>search_results.tsv
 fi
 latestPublishedAt=$(tail -1 search_results.tsv | cut -f1)
 sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&order=date&type=video&q=${q}" ${latestPublishedAt})
 #sResults=$(cat search_results.json) # for test
 echo "${sResults}" >search_results.json
 echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.channelId,.snippet.title,.snippet.description]|@tsv' >search_results.tsv.tmp
-cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv
-rm search_results.tsv.tmp
+cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv.new
+rm search_results.tsv search_results.tsv.tmp
+mv search_results.tsv.new search_results.tsv
 
 # process per each playlist
 addResults=""
@@ -131,7 +132,7 @@ for playListFile in $(ls playlist_*.txt); do
     #plResults=$(cat ${playListFile}.json) # for test
     echo "${plResults}" >${playListFile}.json
     playListItems=$(echo "${plResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
-    echo "count(playListItems)=$(echo "${playListItems}" | wc -l)"
+    echo "${playListFile}, count(playListItems)=$(echo "${playListItems}" | wc -l)"
     # read targets
     targetList=$(sed 1d ${playListFile})
     targets=()
