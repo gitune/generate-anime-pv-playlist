@@ -8,6 +8,7 @@
 #   YOUTUBE_CHANNEL_ID
 
 set -e
+cd $(dirname $0)
 
 # functions
 getAllResults() {
