@@ -41,6 +41,12 @@ getAllResults() {
     echo "${results}"
 }
 
+targetMatch() {
+    # targetMatch target title description
+
+    [[ "$2" =~ "$1" || "$3" =~ "$1" ]] && [[ "$2" =~ "PV" || "$2" =~ "CM" || "$2" =~ "TVCM" || "$2" =~ "OP" || "$2" =~ "オープニング" || "$2" =~ "ED" || "$2" =~ "エンディング" ]]
+}
+
 assumePosition() {
     # assumePosition targetIndex videoId publishedAt
     # global varibales "targets[]" and "playListItems" are needed
@@ -57,7 +63,7 @@ assumePosition() {
         j=0
         # playlistをスキャンして自分の前のPVを探す
         while IFS=$'\t' read -r id title description publishedAt; do
-            if [[ "${title}" =~ "${targets[$i]}" || "${description}" =~ "${targets[$i]}" ]]; then
+            if targetMatch "${targets[$i]}" "${title}" "${description}"; then
                 if [ "$2" == "${id}" ]; then
                     echo "-1"
                     return
@@ -86,6 +92,9 @@ getAccessToken() {
 
 # ======== main ========
 
+# removed video list
+declare -A removed
+
 # read channels ========
 cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
 #cResults=$(cat subscriptions.json) # for test
@@ -101,14 +110,6 @@ while IFS=$'\t' read -r id name; do
     channelQuery="${channelQuery}${d}\"${name}\""
     d="|" 
 done <channels.tsv
-
-# read removed video list ========
-declare -A removed
-if [ -f removed.txt ]; then
-    while read line; do
-        removed[${line}]=1
-    done <removed.txt
-fi
 
 # build query ========
 #q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング ${channelQuery}" | jq -Rr '@uri')
@@ -138,9 +139,12 @@ rm search_results.tsv search_results.tsv.tmp search_results.tsv.all
 mv search_results.tsv.new search_results.tsv
 
 # process per each playlist ========
-addResults=""
 accessToken=$(getAccessToken)
 for playListFile in $(ls playlist_*.txt); do
+    # save old playlist data if exists
+    if [ -f ${playListFile}.json ]; then
+        mv -f ${playListFile}.json ${playListFile}.json.old
+    fi
     # read current playlist
     playlistId=$(cat ${playListFile} | head -1)
     plResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=${playlistId}")
@@ -148,6 +152,25 @@ for playListFile in $(ls playlist_*.txt); do
     echo "${plResults}" >${playListFile}.json
     playListItems=$(echo "${plResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
     echo "${playListFile}, count(playListItems)=$(echo "${playListItems}" | wc -l)"
+    # update removed video list
+    if [ -f ${playListFile}.json.old ]; then
+        cat ${playListFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playListFile}.json.old.ids
+        cat ${playListFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playListFile}.json.ids
+        diff ${playListFile}.json.old.ids ${playListFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' >removed.txt.tmp
+        if [ -f removed.txt ]; then
+            mv -f removed.txt removed.txt.old
+            cat removed.txt.old removed.txt.tmp | sort | uniq >removed.txt
+        else
+            cat removed.txt.tmp | sort | uniq >removed.txt
+        fi
+        rm -f *.ids removed.txt.old removed.txt.tmp
+    fi
+    # read removed video list
+    if [ -f removed.txt ]; then
+        while read line; do
+            removed[${line}]=1
+        done <removed.txt
+    fi
     # read targets
     targetList=$(sed 1d ${playListFile})
     targets=()
@@ -158,9 +181,10 @@ ${targetList}
 EOT
     offset=0
     # check new videos
+    addResult=""
     for i in ${!targets[@]}; do
         tail -1000 search_results.tsv | tac | while IFS=$'\t' read -r publishedAt id cId title description; do
-            if [[ "${title}" =~ "${targets[$i]}" || "${description}" =~ "${targets[$i]}" ]]; then
+            if targetMatch "${targets[$i]}" "${title}" "${description}"; then
                 if [ -n "${removed[${id}]}" ]; then
                     echo "skip ${targets[$i]}, id=${id}"
                     continue
@@ -178,5 +202,11 @@ EOT
             fi
         done
     done
+    if [ -n "${addResult}" ]; then
+        # save updated playlist
+        plResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=${playlistId}")
+        #plResults=$(cat ${playListFile}.json) # for test
+        echo "${plResults}" >${playListFile}.json
+    fi
 done
 
