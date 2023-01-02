@@ -72,11 +72,7 @@ assumePosition() {
 ${playListItems}
 EOT
     done
-    if [ ${prev} -ge 0 ]; then
-        echo $((${prev} + 1))
-    else
-        echo "0"
-    fi
+    echo $((${prev} + 1))
 }
 
 getAccessToken() {
