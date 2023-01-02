@@ -90,7 +90,7 @@ getAccessToken() {
 
 # ======== main ========
 
-# read channels
+# read channels ========
 cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
 #cResults=$(cat subscriptions.json) # for test
 echo "${cResults}" >subscriptions.json
@@ -106,23 +106,42 @@ while IFS=$'\t' read -r id name; do
     d="|" 
 done <channels.tsv
 
-# build query
-q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング ${channelQuery}" | jq -Rr '@uri')
-
-# search
-if [ ! -f search_results.tsv ]; then
-    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >>search_results.tsv
+# read removed video list ========
+declare -A removed
+if [ -f removed.txt ]; then
+    while read line; do
+        removed[${line}]=1
+    done <removed.txt
 fi
-latestPublishedAt=$(tail -1 search_results.tsv | cut -f1)
+
+# build query ========
+#q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング ${channelQuery}" | jq -Rr '@uri')
+q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング" | jq -Rr '@uri')
+
+# search ========
+# use latest
+#if [ ! -f search_results.tsv ]; then
+#    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >>search_results.tsv
+#fi
+#latestPublishedAt=$(tail -1 search_results.tsv | cut -f1)
+# use 1 month ago
+latestPublishedAt=$(jq -rn "now - (86400 * 30)|todate")
 sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&order=date&type=video&q=${q}" ${latestPublishedAt})
 #sResults=$(cat search_results.json) # for test
 echo "${sResults}" >search_results.json
-echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.channelId,.snippet.title,.snippet.description]|@tsv' >search_results.tsv.tmp
+echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.channelId,.snippet.title,.snippet.description]|@tsv' >search_results.tsv.all
+# filter videos in official channels only
+while IFS=$'\n' read line; do
+    cid=$(echo "${line}" | cut -f3)
+    if [ -n "${channelId[${cid}]}" ]; then
+        echo "${line}" >>search_results.tsv.tmp
+    fi
+done <search_results.tsv.all
 cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv.new
-rm search_results.tsv search_results.tsv.tmp
+rm search_results.tsv search_results.tsv.tmp search_results.tsv.all
 mv search_results.tsv.new search_results.tsv
 
-# process per each playlist
+# process per each playlist ========
 addResults=""
 accessToken=$(getAccessToken)
 for playListFile in $(ls playlist_*.txt); do
@@ -143,20 +162,22 @@ ${targetList}
 EOT
     offset=0
     # check new videos
-    tail -1000 search_results.tsv | tac | while IFS=$'\t' read -r publishedAt id cId title description; do
-        for i in ${!targets[@]}; do
+    for i in ${!targets[@]}; do
+        tail -1000 search_results.tsv | tac | while IFS=$'\t' read -r publishedAt id cId title description; do
             if [[ "${title}" =~ "${targets[$i]}" || "${description}" =~ "${targets[$i]}" ]]; then
-                if [ -n "${channelId[${cId}]}" ]; then
-                    pos=$(assumePosition ${i} ${id} ${publishedAt})
-                    if [ $pos -ge 0 ]; then
-                        # insert video to playlist
-                        echo "found ${targets[$i]}, id=${id}, assumePosition=$((${pos} + ${offset}))"
-                        addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet")
-                        echo "${addResult}" >>add_results.json
-                        offset=$(($offset + 1))
-                    else
-                        echo "exist ${targets[$i]}, id=${id}"
-                    fi
+                if [ -n "${removed[${id}]}" ]; then
+                    echo "skip ${targets[$i]}, id=${id}"
+                    continue
+                fi
+                pos=$(assumePosition ${i} ${id} ${publishedAt})
+                if [ $pos -ge 0 ]; then
+                    # insert video to playlist
+                    echo "found ${targets[$i]}, id=${id}, assumePosition=$((${pos} + ${offset}))"
+                    addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet")
+                    echo "${addResult}" >>add_results.json
+                    offset=$(($offset + 1))
+                else
+                    echo "exist ${targets[$i]}, id=${id}"
                 fi
             fi
         done
