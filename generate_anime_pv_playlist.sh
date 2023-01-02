@@ -22,13 +22,13 @@ getAllResults() {
     nextPageToken=""
     olderExists=""
     while
-        if [ -n "${nextPageToken}" ]; then
+        if [[ -n "${nextPageToken}" ]]; then
             nextPageToken="&pageToken=${nextPageToken}"
         fi
         result=$(curl -s "$1${nextPageToken}")
         results="${results}${result}"
         nextPageToken=$(echo "${result}" | jq -r .nextPageToken)
-        if [ -n "$2" ]; then
+        if [[ -n "$2" ]]; then
             oldest=$(echo "${result}" | jq -r '.items[]|.snippet.publishedAt' | sort | head -1)
             if [[ "$2" > "${oldest}" ]]; then
                 olderExists=1
@@ -41,12 +41,6 @@ getAllResults() {
     echo "${results}"
 }
 
-targetMatch() {
-    # targetMatch target title description
-
-    [[ "$2" =~ "$1" || "$3" =~ "$1" ]] && [[ "$2" =~ "PV" || "$2" =~ "CM" || "$2" =~ "TVCM" || "$2" =~ "OP" || "$2" =~ "オープニング" || "$2" =~ "ED" || "$2" =~ "エンディング" ]]
-}
-
 assumePosition() {
     # assumePosition targetIndex videoId publishedAt
     # global varibales "targets[]" and "playListItems" are needed
@@ -57,28 +51,28 @@ assumePosition() {
     local title
     local description
     local publishedAt
+    local filtered
 
     prev="-1"
     for i in $(seq $1 -1 0); do
-        j=0
         # playlistをスキャンして自分の前のPVを探す
-        while IFS=$'\t' read -r id title description publishedAt; do
-            if targetMatch "${targets[$i]}" "${title}" "${description}"; then
-                if [ "$2" == "${id}" ]; then
-                    echo "-1"
-                    return
-                elif [[ $1 -ne $i || "$3" > "${publishedAt}" ]]; then
-                    if [ ${prev} -lt ${j} ]; then
-                        prev=${j}
-                    fi
+        filtered=$(echo "${playListItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | grep -in "${targets[$i]}")
+        while IFS=$'\t' read -r numId title description publishedAt; do
+            j=$(echo "${numId}" | cut -d':' -f1)
+            id=$(echo "${numId}" | cut -d':' -f2)
+            if [[ "$2" == "${id}" ]]; then
+                echo "-1"
+                return
+            elif [[ $1 -ne $i || "$3" > "${publishedAt}" ]]; then
+                if [[ prev -lt j ]]; then
+                    prev=${j}
                 fi
             fi
-            j=$(($j + 1))
         done <<EOT
-${playListItems}
+${filtered}
 EOT
     done
-    echo $((${prev} + 1))
+    echo $((prev + 1))
 }
 
 getAccessToken() {
@@ -117,7 +111,7 @@ q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング" | jq
 
 # search ========
 # use latest
-#if [ ! -f search_results.tsv ]; then
+#if [[ ! -f search_results.tsv ]]; then
 #    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >>search_results.tsv
 #fi
 #latestPublishedAt=$(tail -1 search_results.tsv | cut -f1)
@@ -130,7 +124,7 @@ echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.
 # filter videos in official channels only
 while IFS=$'\n' read line; do
     cid=$(echo "${line}" | cut -f3)
-    if [ -n "${channelId[${cid}]}" ]; then
+    if [[ -n "${channelId[${cid}]}" ]]; then
         echo "${line}" >>search_results.tsv.tmp
     fi
 done <search_results.tsv.all
@@ -142,8 +136,9 @@ mv search_results.tsv.new search_results.tsv
 accessToken=$(getAccessToken)
 for playListFile in $(ls playlist_*.txt); do
     # save old playlist data if exists
-    if [ -f ${playListFile}.json ]; then
+    if [[ -f ${playListFile}.json ]]; then
         mv -f ${playListFile}.json ${playListFile}.json.old
+        #cp ${playListFile}.json.old ${playListFile}.json # for test
     fi
     # read current playlist
     playlistId=$(cat ${playListFile} | head -1)
@@ -153,11 +148,11 @@ for playListFile in $(ls playlist_*.txt); do
     playListItems=$(echo "${plResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
     echo "${playListFile}, count(playListItems)=$(echo "${playListItems}" | wc -l)"
     # update removed video list
-    if [ -f ${playListFile}.json.old ]; then
+    if [[ -f ${playListFile}.json.old ]]; then
         cat ${playListFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playListFile}.json.old.ids
         cat ${playListFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playListFile}.json.ids
         diff ${playListFile}.json.old.ids ${playListFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' >removed.txt.tmp
-        if [ -f removed.txt ]; then
+        if [[ -f removed.txt ]]; then
             mv -f removed.txt removed.txt.old
             cat removed.txt.old removed.txt.tmp | sort | uniq >removed.txt
         else
@@ -166,7 +161,7 @@ for playListFile in $(ls playlist_*.txt); do
         rm -f *.ids removed.txt.old removed.txt.tmp
     fi
     # read removed video list
-    if [ -f removed.txt ]; then
+    if [[ -f removed.txt ]]; then
         while read line; do
             removed[${line}]=1
         done <removed.txt
@@ -175,7 +170,8 @@ for playListFile in $(ls playlist_*.txt); do
     targetList=$(sed 1d ${playListFile})
     targets=()
     while read t; do
-        targets+=("${t}")
+        nTarget=$(echo "${t}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth')
+        targets+=("${nTarget}")
     done <<EOT
 ${targetList}
 EOT
@@ -183,26 +179,26 @@ EOT
     # check new videos
     addResult=""
     for i in ${!targets[@]}; do
-        tail -1000 search_results.tsv | tac | while IFS=$'\t' read -r publishedAt id cId title description; do
-            if targetMatch "${targets[$i]}" "${title}" "${description}"; then
-                if [ -n "${removed[${id}]}" ]; then
-                    echo "skip ${targets[$i]}, id=${id}"
-                    continue
-                fi
-                pos=$(assumePosition ${i} ${id} ${publishedAt})
-                if [ $pos -ge 0 ]; then
-                    # insert video to playlist
-                    echo "found ${targets[$i]}, id=${id}, assumePosition=$((${pos} + ${offset}))"
-                    addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet")
-                    echo "${addResult}" >>add_results.json
-                    offset=$(($offset + 1))
-                else
-                    echo "exist ${targets[$i]}, id=${id}"
-                fi
+        tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
+        grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング" | \
+        while IFS=$'\t' read -r publishedAt id cId title description; do
+            if [[ -n "${removed[${id}]}" ]]; then
+                echo "skip ${targets[$i]}, id=${id}"
+                continue
+            fi
+            pos=$(assumePosition ${i} ${id} ${publishedAt})
+            if [[ pos -ge 0 ]]; then
+                # insert video to playlist
+                echo "found ${targets[$i]}, id=${id}, assumePosition=$((${pos} + ${offset}))"
+                addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet")
+                echo "${addResult}" >>add_results.json
+                offset=$(($offset + 1))
+            else
+                echo "exist ${targets[$i]}, id=${id}"
             fi
         done
     done
-    if [ -n "${addResult}" ]; then
+    if [[ -n "${addResult}" ]]; then
         # save updated playlist
         plResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=${playlistId}")
         #plResults=$(cat ${playListFile}.json) # for test
