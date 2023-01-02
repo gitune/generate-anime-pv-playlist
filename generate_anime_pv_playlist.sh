@@ -59,6 +59,7 @@ assumePosition() {
         filtered=$(echo "${playListItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | grep -in "${targets[$i]}")
         while IFS=$'\t' read -r numId title description publishedAt; do
             j=$(echo "${numId}" | cut -d':' -f1)
+            j=$((j - 1)) # 0 origin
             id=$(echo "${numId}" | cut -d':' -f2)
             if [[ "$2" == "${id}" ]]; then
                 echo "-1"
@@ -189,10 +190,10 @@ EOT
             pos=$(assumePosition ${i} ${id} ${publishedAt})
             if [[ pos -ge 0 ]]; then
                 # insert video to playlist
-                echo "found ${targets[$i]}, id=${id}, assumePosition=$((${pos} + ${offset}))"
+                echo "found ${targets[$i]}, id=${id}, assumePosition=$((pos + offset))"
                 addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet")
                 echo "${addResult}" >>add_results.json
-                offset=$(($offset + 1))
+                offset=$((offset + 1))
             else
                 echo "exist ${targets[$i]}, id=${id}"
             fi
