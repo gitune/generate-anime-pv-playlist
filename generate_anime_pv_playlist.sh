@@ -99,7 +99,7 @@ updatePlaylists() {
     # this function updates a global variable "playlistItems"
     local result
 
-    result=$(getAllResults $1")
+    result=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=$1")
     #result=$(cat $2.json) # for test
     echo "${result}" >$2.json
     playlistItems=$(echo "${result}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
