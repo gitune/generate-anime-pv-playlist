@@ -112,8 +112,8 @@ updatePlaylists() {
 declare -A removed
 
 # read channels & videos ========
-#cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
-cResults=$(cat subscriptions.json) # for test
+cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
+#cResults=$(cat subscriptions.json) # for test
 echo "${cResults}" >subscriptions.json
 echo "${cResults}" | jq -r '.items[]|[.snippet.resourceId.channelId,.snippet.title]|@tsv' >channels.tsv
 echo "count(channels)=$(cat channels.tsv | wc -l)"
