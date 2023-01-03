@@ -44,7 +44,7 @@ getAllResults() {
 
 assumePosition() {
     # assumePosition targetIndex videoId publishedAt
-    # global varibales "targets[]" and "playListItems" are needed
+    # global varibales "targets[]" and "playlistItems" are needed
     local prev
     local i
     local j
@@ -57,7 +57,7 @@ assumePosition() {
     prev="-1"
     for i in $(seq $1 -1 0); do
         # playlistをスキャンして自分の前のPVを探す
-        filtered=$(echo "${playListItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
+        filtered=$(echo "${playlistItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
             grep -in "${targets[$i]}" | cat) # avoid exit when no result
         while IFS=$'\t' read -r numId title description publishedAt; do
             if [[ -z "${numId}" ]]; then
@@ -89,6 +89,18 @@ getAccessToken() {
 
     result=$(curl -s -H "Content-Type: application/json" -d "{refresh_token:\"${YOUTUBE_REFRESH_TOKEN}\",client_id:\"${YOUTUBE_CLIENT_ID}\",client_secret:\"${YOUTUBE_CLIENT_SECRET}\",redirect_uri:\"http://localhost:8000\",grant_type:\"refresh_token\"}" https://accounts.google.com/o/oauth2/token)
     echo $(echo "${result}" | jq -r .access_token)
+}
+
+updatePlaylists() {
+    # updatePlaylists playlistId playlistFile
+    # this function updates a global variable "playlistItems"
+    local result
+
+    result=$(getAllResults $1")
+    #result=$(cat $2.json) # for test
+    echo "${result}" >$2.json
+    playlistItems=$(echo "${result}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
+    echo "$2, count(playlistItems)=$(echo "${playlistItems}" | wc -l)"
 }
 
 # ======== main ========
@@ -130,24 +142,20 @@ mv search_results.tsv.new search_results.tsv
 
 # process per each playlist ========
 accessToken=$(getAccessToken)
-for playListFile in $(ls playlist_*.txt); do
+for playlistFile in $(ls playlist_*.txt); do
     # save old playlist data if exists
-    if [[ -f ${playListFile}.json ]]; then
-        mv -f ${playListFile}.json ${playListFile}.json.old
-        #cp ${playListFile}.json.old ${playListFile}.json # for test
+    if [[ -f ${playlistFile}.json ]]; then
+        mv -f ${playlistFile}.json ${playlistFile}.json.old
+        #cp ${playlistFile}.json.old ${playlistFile}.json # for test
     fi
     # read current playlist
-    playlistId=$(cat ${playListFile} | head -1)
-    plResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=${playlistId}")
-    #plResults=$(cat ${playListFile}.json) # for test
-    echo "${plResults}" >${playListFile}.json
-    playListItems=$(echo "${plResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
-    echo "${playListFile}, count(playListItems)=$(echo "${playListItems}" | wc -l)"
+    playlistId=$(cat ${playlistFile} | head -1)
+    updatePlaylists "${playlistId}" "${playlistFile}"
     # update removed video list
-    if [[ -f ${playListFile}.json.old ]]; then
-        cat ${playListFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playListFile}.json.old.ids
-        cat ${playListFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playListFile}.json.ids
-        diff ${playListFile}.json.old.ids ${playListFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' >removed.txt.tmp
+    if [[ -f ${playlistFile}.json.old ]]; then
+        cat ${playlistFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.old.ids
+        cat ${playlistFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.ids
+        diff ${playlistFile}.json.old.ids ${playlistFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' >removed.txt.tmp
         if [[ -f removed.txt ]]; then
             mv -f removed.txt removed.txt.old
             cat removed.txt.old removed.txt.tmp | sort | uniq >removed.txt
@@ -163,7 +171,7 @@ for playListFile in $(ls playlist_*.txt); do
         done <removed.txt
     fi
     # read targets
-    targetList=$(sed 1d ${playListFile})
+    targetList=$(sed 1d ${playlistFile})
     targets=()
     while read t; do
         nTarget=$(echo "${t}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth')
@@ -171,9 +179,7 @@ for playListFile in $(ls playlist_*.txt); do
     done <<EOT
 ${targetList}
 EOT
-    offset=0
     # check new videos
-    addResult=""
     for i in ${!targets[@]}; do
         searchResults=$(tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
             grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | cat)
@@ -189,10 +195,10 @@ EOT
             pos=$(assumePosition ${i} ${id} ${publishedAt})
             if [[ pos -ge 0 ]]; then
                 # insert video to playlist
-                echo "found ${targets[$i]}, id=${id}, assumePosition=$((pos + offset))"
+                echo "found ${targets[$i]}, id=${id}, assumePosition=${pos}"
                 addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet") # commented for test
                 echo "${addResult}" >>add_results.json
-                offset=$((offset + 1))
+                updatePlaylists "${playlistId}" "${playlistFile}"
             else
                 echo "exist ${targets[$i]}, id=${id}"
             fi
@@ -200,11 +206,5 @@ EOT
 ${searchResults}
 EOT
     done
-    if [[ -n "${addResult}" ]]; then
-        # save updated playlist
-        plResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=${playlistId}")
-        #plResults=$(cat ${playListFile}.json) # for test
-        echo "${plResults}" >${playListFile}.json
-    fi
 done
 
