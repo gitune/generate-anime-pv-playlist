@@ -10,6 +10,9 @@
 set -e
 cd $(dirname $0)
 
+# constants
+KEYWORDS="PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像"
+
 # functions
 getAllResults() {
     # getAllResults query latestAt(opt)
@@ -131,7 +134,7 @@ while IFS=$'\t' read -r cId cName; do
         fi
         sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
         echo "${sResults}" >>search_results.json
-        echo "${sResults}" | jq -r ".items[]|[.snippet.publishedAt,.snippet.resourceId.videoId,\"${cId}\",.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+        echo "${sResults}" | jq -r ".items[]|[.snippet.publishedAt,.snippet.resourceId.videoId,\"${cId}\",.snippet.title,.snippet.description]|@tsv" | egrep -i "${KEYWORDS}" | cat >>search_results.tsv.tmp
     done <<EOT
 ${uploads}
 EOT
@@ -182,7 +185,7 @@ EOT
     # check new videos
     for i in ${!targets[@]}; do
         searchResults=$(tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-            grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | cat)
+            grep -i "${targets[$i]}" | cat)
         while IFS=$'\t' read -r publishedAt id cId title description; do
             if [[ -z "${id}" ]]; then
                 # no result
