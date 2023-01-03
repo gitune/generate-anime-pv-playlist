@@ -16,6 +16,7 @@ getAllResults() {
     local result
     local results
     local nextPageToken
+    local oldest
     local olderExists
 
     results=""
@@ -121,16 +122,18 @@ latestPublishedAt=$(jq -rn "now - (86400 * 30)|todate")
 sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&order=date&type=video&q=${q}" ${latestPublishedAt})
 #sResults=$(cat search_results.json) # for test
 echo "${sResults}" >search_results.json
-echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.channelId,.snippet.title,.snippet.description]|@tsv' >search_results.tsv.all
+searchResultsAll=$(echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.channelId,.snippet.title,.snippet.description]|@tsv')
 # filter videos in official channels only
 while IFS=$'\n' read line; do
     cid=$(echo "${line}" | cut -f3)
     if [[ -n "${channelId[${cid}]}" ]]; then
         echo "${line}" >>search_results.tsv.tmp
     fi
-done <search_results.tsv.all
+done <<EOT
+${searchResultsAll}
+EOT
 cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv.new
-rm search_results.tsv search_results.tsv.tmp search_results.tsv.all
+rm search_results.tsv search_results.tsv.tmp
 mv search_results.tsv.new search_results.tsv
 
 # process per each playlist ========
