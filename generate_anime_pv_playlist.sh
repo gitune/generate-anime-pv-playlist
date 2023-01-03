@@ -183,8 +183,8 @@ EOT
     # check new videos
     addResult=""
     for i in ${!targets[@]}; do
-        tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-        grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | \
+        searchResults=$(tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
+        grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像")
         while IFS=$'\t' read -r publishedAt id cId title description; do
             if [[ -n "${removed[${id}]}" ]]; then
                 echo "skip ${targets[$i]}, id=${id}"
@@ -200,7 +200,9 @@ EOT
             else
                 echo "exist ${targets[$i]}, id=${id}"
             fi
-        done
+        done <<EOT
+${searchResults}
+EOT
     done
     if [[ -n "${addResult}" ]]; then
         # save updated playlist
