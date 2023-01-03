@@ -108,8 +108,8 @@ while IFS=$'\t' read -r id name; do
 done <channels.tsv
 
 # build query ========
-#q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング ${channelQuery}" | jq -Rr '@uri')
-q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング" | jq -Rr '@uri')
+#q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像 ${channelQuery}" | jq -Rr '@uri')
+q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | jq -Rr '@uri')
 
 # search ========
 # use latest
@@ -184,7 +184,7 @@ EOT
     addResult=""
     for i in ${!targets[@]}; do
         tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-        grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング" | \
+        grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | \
         while IFS=$'\t' read -r publishedAt id cId title description; do
             if [[ -n "${removed[${id}]}" ]]; then
                 echo "skip ${targets[$i]}, id=${id}"
