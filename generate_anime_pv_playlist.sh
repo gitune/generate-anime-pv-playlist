@@ -117,8 +117,8 @@ q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング" | jq
 #    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >>search_results.tsv
 #fi
 #latestPublishedAt=$(tail -1 search_results.tsv | cut -f1)
-# use 1 month ago
-latestPublishedAt=$(jq -rn "now - (86400 * 30)|todate")
+# use 3 month ago
+latestPublishedAt=$(jq -rn "now - (86400 * 120)|todate")
 sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&order=date&type=video&q=${q}" ${latestPublishedAt})
 #sResults=$(cat search_results.json) # for test
 echo "${sResults}" >search_results.json
