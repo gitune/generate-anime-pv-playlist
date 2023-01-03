@@ -184,8 +184,8 @@ ${targetList}
 EOT
     # check new videos
     for i in ${!targets[@]}; do
-        searchResults=$(tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-            grep -i "${targets[$i]}" | cat)
+        searchResults=$(tail -1000 search_results.tsv | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
+            grep -i "${targets[$i]}" | tac)
         while IFS=$'\t' read -r publishedAt id cId title description; do
             if [[ -z "${id}" ]]; then
                 # no result
