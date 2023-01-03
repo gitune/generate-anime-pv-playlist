@@ -96,49 +96,36 @@ getAccessToken() {
 # removed video list
 declare -A removed
 
-# read channels ========
-cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
-#cResults=$(cat subscriptions.json) # for test
+# read channels & videos ========
+#cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
+cResults=$(cat subscriptions.json) # for test
 echo "${cResults}" >subscriptions.json
 echo "${cResults}" | jq -r '.items[]|[.snippet.resourceId.channelId,.snippet.title]|@tsv' >channels.tsv
 echo "count(channels)=$(cat channels.tsv | wc -l)"
 
-declare -A channelId
-channelQuery=""
-d=""
-while IFS=$'\t' read -r id name; do
-    channelId[${id}]=1
-    channelQuery="${channelQuery}${d}\"${name}\""
-    d="|" 
-done <channels.tsv
+# use 2 days ago
+latestPublishedAt=$(jq -rn "now - (86400 * 2)|todate")
 
-# build query ========
-#q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像 ${channelQuery}" | jq -Rr '@uri')
-q=$(echo "アニメ PV|CM|TVCM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | jq -Rr '@uri')
-
-# search ========
-# use latest
-#if [[ ! -f search_results.tsv ]]; then
-#    jq -rn "now - (86400 * 30)|[todate,\"dummyId\",\"dummyCid\",\"dummyTitle\",\"dummyDesc\"]|@tsv" >>search_results.tsv
-#fi
-#latestPublishedAt=$(tail -1 search_results.tsv | cut -f1)
-# use 3 month ago
-latestPublishedAt=$(jq -rn "now - (86400 * 120)|todate")
-sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/search?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&order=date&type=video&q=${q}" ${latestPublishedAt})
-#sResults=$(cat search_results.json) # for test
-echo "${sResults}" >search_results.json
-searchResultsAll=$(echo "${sResults}" | jq -r '.items[]|[.snippet.publishedAt,.id.videoId,.snippet.channelId,.snippet.title,.snippet.description]|@tsv')
-# filter videos in official channels only
-while IFS=$'\n' read line; do
-    cid=$(echo "${line}" | cut -f3)
-    if [[ -n "${channelId[${cid}]}" ]]; then
-        echo "${line}" >>search_results.tsv.tmp
-    fi
-done <<EOT
-${searchResultsAll}
+if [[ -s search_results.json ]]; then
+    mv -f search_results.json search_results.json.old
+fi
+while IFS=$'\t' read -r cId cName; do
+    echo "get videos on ${cName}"
+    cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
+    uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
+    while read plId; do
+        if [[ -z "${plId}" ]]; then
+            break
+        fi
+        sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
+        echo "${sResults}" >>search_results.json
+        echo "${sResults}" | jq -r ".items[]|[.snippet.publishedAt,.snippet.resourceId.videoId,\"${cId}\",.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+    done <<EOT
+${uploads}
 EOT
+done <channels.tsv
 cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv.new
-rm search_results.tsv search_results.tsv.tmp
+rm -f search_results.tsv search_results.tsv.tmp
 mv search_results.tsv.new search_results.tsv
 
 # process per each playlist ========
