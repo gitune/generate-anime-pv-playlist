@@ -26,7 +26,7 @@ getAllResults() {
         if [[ -n "${nextPageToken}" ]]; then
             nextPageToken="&pageToken=${nextPageToken}"
         fi
-        result=$(curl -s "$1${nextPageToken}")
+        result=$(curl -s --compressed "$1${nextPageToken}")
         results="${results}${result}"
         nextPageToken=$(echo "${result}" | jq -r .nextPageToken)
         if [[ -n "$2" ]]; then
