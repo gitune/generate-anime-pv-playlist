@@ -57,8 +57,13 @@ assumePosition() {
     prev="-1"
     for i in $(seq $1 -1 0); do
         # playlistをスキャンして自分の前のPVを探す
-        filtered=$(echo "${playListItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | grep -in "${targets[$i]}")
+        filtered=$(echo "${playListItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
+            grep -in "${targets[$i]}" | cat) # avoid exit when no result
         while IFS=$'\t' read -r numId title description publishedAt; do
+            if [[ -z "${numId}" ]]; then
+                # no result
+                break
+            fi
             j=$(echo "${numId}" | cut -d':' -f1)
             j=$((j - 1)) # 0 origin
             id=$(echo "${numId}" | cut -d':' -f2)
@@ -184,8 +189,12 @@ EOT
     addResult=""
     for i in ${!targets[@]}; do
         searchResults=$(tail -1000 search_results.tsv | tac | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-        grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像")
+            grep -i "${targets[$i]}" | egrep -i "PV|CM|OP|オープニング|ED|エンディング|紹介映像|ティザー映像" | cat)
         while IFS=$'\t' read -r publishedAt id cId title description; do
+            if [[ -z "${id}" ]]; then
+                # no result
+                break
+            fi
             if [[ -n "${removed[${id}]}" ]]; then
                 echo "skip ${targets[$i]}, id=${id}"
                 continue
@@ -194,7 +203,7 @@ EOT
             if [[ pos -ge 0 ]]; then
                 # insert video to playlist
                 echo "found ${targets[$i]}, id=${id}, assumePosition=$((pos + offset))"
-                addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet")
+                addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet") # commented for test
                 echo "${addResult}" >>add_results.json
                 offset=$((offset + 1))
             else
