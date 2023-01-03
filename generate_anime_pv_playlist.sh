@@ -68,7 +68,7 @@ assumePosition() {
                 break
             fi
             j=$(echo "${numId}" | cut -d':' -f1)
-            j=$((j - 1)) # 0 origin
+            j=$((j - 1)) # to be 0 origin
             id=$(echo "${numId}" | cut -d':' -f2)
             if [[ "$2" == "${id}" ]]; then
                 echo "-1"
@@ -134,7 +134,7 @@ while IFS=$'\t' read -r cId cName; do
         fi
         sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
         echo "${sResults}" >>search_results.json
-        echo "${sResults}" | jq -r ".items[]|select(.snippet.title|test(\"(${KEYWORDS})\",\"i\"))|[.snippet.publishedAt,.snippet.resourceId.videoId,\"${cId}\",.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+        echo "${sResults}" | jq -r ".items[]|select(.snippet.title|test(\"(${KEYWORDS})\",\"i\"))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
     done <<EOT
 ${uploads}
 EOT
@@ -186,7 +186,7 @@ EOT
     for i in ${!targets[@]}; do
         searchResults=$(tail -1000 search_results.tsv | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
             grep -i "${targets[$i]}" | tac)
-        while IFS=$'\t' read -r publishedAt id cId title description; do
+        while IFS=$'\t' read -r publishedAt id title description; do
             if [[ -z "${id}" ]]; then
                 # no result
                 break
