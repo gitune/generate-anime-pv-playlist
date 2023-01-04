@@ -157,7 +157,7 @@ for cId in "${!channelsPlaylists[@]}"; do
     echo -e "${cId}\t${channelsPlaylists[${cId}]}" >>channelsPlaylists.tsv.tmp
 done
 cat channelsPlaylists.tsv* | sort | uniq >channelsPlaylists.new
-rm -f channelsPlaylists.tsv channelsPlaylists.tsv.tmp
+rm -f channelsPlaylists.tsv*
 mv -f channelsPlaylists.new channelsPlaylists.tsv
 
 # process per each playlist ========
