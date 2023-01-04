@@ -112,6 +112,12 @@ updatePlaylists() {
 declare -A removed
 
 # read channels & videos ========
+declare -A channelsPlaylists
+if [[ -f channelsPlaylists.tsv ]]; then
+    while IFS=$'\t' read -r cId plId; do
+        channelsPlaylists[${cId}]="${plId}"
+    done <channelsPlaylists.tsv
+fi
 cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
 #cResults=$(cat subscriptions.json) # for test
 echo "${cResults}" >subscriptions.json
@@ -126,15 +132,20 @@ if [[ -s search_results.json ]]; then
 fi
 while IFS=$'\t' read -r cId cName; do
     echo "get videos on ${cName}"
-    cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
-    uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
-    while read plId; do
+    if [[ -z ${channelsPlaylists[${cId}]} ]]; then
+        cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
+        uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
+    else
+        uploads="${channelsPlaylists[${cId}]}"
+    fi
+    while read -r plId; do
         if [[ -z "${plId}" ]]; then
             break
         fi
         sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
         echo "${sResults}" >>search_results.json
         echo "${sResults}" | jq -r ".items[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+        channelsPlaylists[${cId}]="${plId}"
     done <<EOT
 ${uploads}
 EOT
@@ -142,6 +153,12 @@ done <channels.tsv
 cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv.new
 rm -f search_results.tsv search_results.tsv.tmp
 mv search_results.tsv.new search_results.tsv
+for cId in "${!channelsPlaylists[@]}"; do
+    echo -e "${cId}\t${channelsPlaylists[${cId}]}" >>channelsPlaylists.tsv.tmp
+done
+cat channelsPlaylists.tsv* | sort | uniq >channelsPlaylists.new
+rm -f channelsPlaylists.tsv channelsPlaylists.tsv.tmp
+mv -f channelsPlaylists.new channelsPlaylists.tsv
 
 # process per each playlist ========
 accessToken=$(getAccessToken)
