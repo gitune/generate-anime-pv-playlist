@@ -135,6 +135,9 @@ while IFS=$'\t' read -r cId cName; do
     if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
         cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
         uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
+        if [[ -z "${uploads}" ]]; then
+            echo "CAUTION! no \"uploads\" playlist: ${cName}"
+        fi
     else
         uploads="${channelsPlaylists[${cId}]}"
     fi
@@ -211,7 +214,7 @@ EOT
             pos=$(assumePosition ${i} ${id} ${publishedAt})
             if [[ pos -ge 0 ]]; then
                 # insert video to playlist
-                echo "found ${targets[$i]}, id=${id}, assumePosition=${pos}"
+                echo "FOUND ${targets[$i]}, id=${id}, assumePosition=${pos}"
                 addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet") # commented for test
                 echo "${addResult}" >>add_results.json
                 updatePlaylists "${playlistId}" "${playlistFile}"
