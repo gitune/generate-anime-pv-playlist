@@ -150,9 +150,9 @@ while IFS=$'\t' read -r cId cName; do
 ${uploads}
 EOT
 done <channels.tsv
-cat search_results.tsv search_results.tsv.tmp | sort | uniq >search_results.tsv.new
-rm -f search_results.tsv search_results.tsv.tmp
-mv search_results.tsv.new search_results.tsv
+cat search_results.tsv* | sort | uniq >search_results.new
+rm -f search_results.tsv*
+mv -f search_results.new search_results.tsv
 for cId in "${!channelsPlaylists[@]}"; do
     echo -e "${cId}\t${channelsPlaylists[${cId}]}" >>channelsPlaylists.tsv.tmp
 done
