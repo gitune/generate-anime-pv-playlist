@@ -132,7 +132,7 @@ if [[ -s search_results.json ]]; then
 fi
 while IFS=$'\t' read -r cId cName; do
     echo "get videos on ${cName}"
-    if [[ -z ${channelsPlaylists[${cId}]} ]]; then
+    if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
         cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
         uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
     else
@@ -176,13 +176,9 @@ for playlistFile in $(ls playlist_*.txt); do
         cat ${playlistFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.old.ids
         cat ${playlistFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.ids
         diff ${playlistFile}.json.old.ids ${playlistFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' >removed.txt.tmp
-        if [[ -f removed.txt ]]; then
-            mv -f removed.txt removed.txt.old
-            cat removed.txt.old removed.txt.tmp | sort | uniq >removed.txt
-        else
-            cat removed.txt.tmp | sort | uniq >removed.txt
-        fi
-        rm -f *.ids removed.txt.old removed.txt.tmp
+        cat removed.txt* | sort | uniq >removed.new
+        rm -f *.ids removed.txt*
+        mv -f removed.new removed.txt
     fi
     # read removed video list
     if [[ -f removed.txt ]]; then
