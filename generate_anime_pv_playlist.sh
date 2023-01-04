@@ -136,7 +136,7 @@ while IFS=$'\t' read -r cId cName; do
         cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
         uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
         if [[ -z "${uploads}" ]]; then
-            echo "CAUTION! no \"uploads\" playlist: ${cName}"
+            echo "CAUTION! no \"uploads\" playlist on ${cName}"
         fi
     else
         uploads="${channelsPlaylists[${cId}]}"
