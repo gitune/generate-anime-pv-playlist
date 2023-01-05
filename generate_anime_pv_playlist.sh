@@ -106,7 +106,22 @@ updatePlaylists() {
     echo "$2, count(playlistItems)=$(echo "${playlistItems}" | wc -l)"
 }
 
+backupFile() {
+    # backupFile targetFile
+
+    if [[ -s $1 ]]; then
+        mv -f $1 $1.old
+    fi
+}
+
+generateRandomExpiry() {
+    # random expiry within 30 days
+    # cannot use $RANDOM because "30 days" in sec is greater than 32768.
+    echo $(($(head -c4 /dev/urandom | od -An -t x4 | sed -r 's/^ *([^ ]+) *$/0x\1/') % (86400 * 30)))
+}
+
 # ======== main ========
+nowInSec=$(date +%s)
 
 # removed video list
 declare -A removed
@@ -115,7 +130,14 @@ declare -A removed
 declare -A channelsPlaylists
 if [[ -f channelsPlaylists.tsv ]]; then
     while IFS=$'\t' read -r cId plId; do
-        channelsPlaylists[${cId}]="${plId}"
+        p=$(echo "${plId}" | cut -d':' -f1)
+        exp=$(echo "${plId}" | cut -d':' -f2)
+        if [[ "${p}" == "${exp}" ]]; then
+            # missing expiry
+            channelsPlaylists[${cId}]="${plId}:$((nowInSec + $(generateRandomExpiry)))"
+        elif [[ exp -gt nowInSec ]]; then
+            channelsPlaylists[${cId}]="${plId}"
+        fi
     done <channelsPlaylists.tsv
 fi
 cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
@@ -127,70 +149,68 @@ echo "count(channels)=$(cat channels.tsv | wc -l)"
 # use 2 days ago
 latestPublishedAt=$(jq -rn "now - (86400 * 2)|todate")
 
-if [[ -s search_results.json ]]; then
-    mv -f search_results.json search_results.json.old
-fi
+backupFile search_results.json
+backupFile search_results.tsv
 while IFS=$'\t' read -r cId cName; do
     echo "get videos on ${cName}"
     if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
         cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
-        uploads=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads')
-        if [[ -z "${uploads}" ]]; then
+        plId=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads' | head -1)
+        if [[ -z "${plId}" ]]; then
             echo "CAUTION! no \"uploads\" playlist on ${cName}"
+            continue
         fi
     else
-        uploads="${channelsPlaylists[${cId}]}"
+        cached="${channelsPlaylists[${cId}]}"
+        plId=$(echo "${cached}" | cut -d':' -f1)
     fi
-    while read -r plId; do
-        if [[ -z "${plId}" ]]; then
-            break
-        fi
-        sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
-        echo "${sResults}" >>search_results.json
-        echo "${sResults}" | jq -r ".items[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
-        channelsPlaylists[${cId}]="${plId}"
-    done <<EOT
-${uploads}
-EOT
+    sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
+    echo "${sResults}" >>search_results.json
+    echo "${sResults}" | jq -r ".items[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+    if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
+        channelsPlaylists[${cId}]="${plId}:$((nowInSec + $(generateRandomExpiry)))"
+    fi
 done <channels.tsv
-cat search_results.tsv* | sort | uniq >search_results.new
-rm -f search_results.tsv*
-mv -f search_results.new search_results.tsv
+cat search_results.tsv.tmp | sort | uniq >search_results.tsv
+rm -f search_results.tsv.tmp
+backupFile channelsPlaylists.tsv
 for cId in "${!channelsPlaylists[@]}"; do
-    echo -e "${cId}\t${channelsPlaylists[${cId}]}" >>channelsPlaylists.tsv.tmp
+    echo -e "${cId}\t${channelsPlaylists[${cId}]}" >>channelsPlaylists.tsv
 done
-cat channelsPlaylists.tsv* | sort | uniq >channelsPlaylists.new
-rm -f channelsPlaylists.tsv*
-mv -f channelsPlaylists.new channelsPlaylists.tsv
 
 # process per each playlist ========
 accessToken=$(getAccessToken)
 for playlistFile in $(ls playlist_*.txt); do
     # save old playlist data if exists
-    if [[ -f ${playlistFile}.json ]]; then
-        mv -f ${playlistFile}.json ${playlistFile}.json.old
-        #cp ${playlistFile}.json.old ${playlistFile}.json # for test
-    fi
+    backupFile ${playlistFile}.json
+    #cp ${playlistFile}.json.old ${playlistFile}.json # for test
     # read current playlist
-    playlistId=$(cat ${playlistFile} | head -1)
+    playlistId=$(cat ${playlistFile} | sed -n 1P)
+    playlistId2=$(cat ${playlistFile} | sed -n 2P)
     updatePlaylists "${playlistId}" "${playlistFile}"
     # update removed video list
     if [[ -f ${playlistFile}.json.old ]]; then
         cat ${playlistFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.old.ids
         cat ${playlistFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.ids
-        diff ${playlistFile}.json.old.ids ${playlistFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' >removed.txt.tmp
-        cat removed.txt* | sort | uniq >removed.new
-        rm -f *.ids removed.txt*
-        mv -f removed.new removed.txt
+        diff ${playlistFile}.json.old.ids ${playlistFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' | sort | uniq >removed.new
+        while read vId; do
+            removed[${vId}]=1
+        done <removed.new
+        rm -f *.ids removed.new
     fi
     # read removed video list
     if [[ -f removed.txt ]]; then
-        while read line; do
-            removed[${line}]=1
+        while read vId; do
+            removed[${vId}]=1
         done <removed.txt
     fi
+    # save removed video list
+    backupFile removed.txt
+    for vId in "${!removed[@]}"; do
+        echo "${vId}" >>removed.txt
+    done
     # read targets
-    targetList=$(sed 1d ${playlistFile})
+    targetList=$(sed 1,2d ${playlistFile})
     targets=()
     while read t; do
         nTarget=$(echo "${t}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth')
@@ -215,8 +235,8 @@ EOT
             if [[ pos -ge 0 ]]; then
                 # insert video to playlist
                 echo "FOUND ${targets[$i]}, id=${id}, assumePosition=${pos}"
-                addResult=$(curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet") # commented for test
-                echo "${addResult}" >>add_results.json
+                curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json # commented for test
+                curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId2}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":0}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json # commented for test
                 updatePlaylists "${playlistId}" "${playlistFile}"
             else
                 echo "exist ${targets[$i]}, id=${id}"
