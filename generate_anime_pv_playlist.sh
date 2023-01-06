@@ -237,19 +237,18 @@ EOT
                 continue
             fi
             pos=$(assumePosition ${i} ${id} ${publishedAt})
-            if [[ pos -ge 0 ]]; then
-                if [[ "${endTimeInScope}" > "${publishedAt}" ]]; then
-                    echo "found, but too old ${targets[$i]}, id=${id}, title=${title}"
-                    continue
-                fi
-                # insert video to playlist
-                echo "FOUND ${targets[$i]}, id=${id}, assumePosition=${pos}"
-                curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
-                curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId2}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":0}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
-                updatePlaylists "${playlistId}" "${playlistFile}"
-            else
+            if [[ pos -lt 0 ]]; then
                 echo "exist ${targets[$i]}, id=${id}"
+                continue
+            elif [[ "${endTimeInScope}" > "${publishedAt}" ]]; then
+                echo "found, but too old ${targets[$i]}, id=${id}, title=${title}"
+                continue
             fi
+            # insert video to playlist
+            echo "FOUND ${targets[$i]}, id=${id}, assumePosition=${pos}"
+            curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
+            curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId2}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":0}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
+            updatePlaylists "${playlistId}" "${playlistFile}"
         done <<EOT
 ${searchResults}
 EOT
