@@ -103,7 +103,7 @@ updatePlaylists() {
     #result=$(cat $2.json) # for test
     echo "${result}" >$2.json
     playlistItems=$(echo "${result}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
-    echo "$2, count(playlistItems)=$(echo "${playlistItems}" | wc -l)"
+    echo "LOAD $2, count(playlistItems)=$(echo "${playlistItems}" | wc -l)"
 }
 
 backupFile() {
@@ -122,6 +122,7 @@ generateRandomExpiry() {
 
 # ======== main ========
 nowInSec=$(date +%s)
+endTimeInScope=$(jq -rn "now - (86400 * 30)|todate") # 30 days before
 
 # removed video list
 declare -A removed
@@ -194,20 +195,24 @@ for playlistFile in $(ls playlist_*.txt); do
         cat ${playlistFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.ids
         diff ${playlistFile}.json.old.ids ${playlistFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' | sort | uniq >removed.new
         while read vId; do
-            removed[${vId}]=1
+            removed[${vId}]=$((nowInSec + (86400 * 30))) # 30 days after
         done <removed.new
         rm -f *.ids removed.new
     fi
     # read removed video list
     if [[ -f removed.txt ]]; then
-        while read vId; do
-            removed[${vId}]=1
+        while IFS=$'\t' read -r vId exp; do
+            if [[ -z "${exp}" ]]; then
+                removed[${vId}]=$((nowInSec + (86400 * 30)))
+            elif [[ exp -gt nowInSec ]]; then
+                removed[${vId}]=${exp}
+            fi
         done <removed.txt
     fi
     # save removed video list
     backupFile removed.txt
     for vId in "${!removed[@]}"; do
-        echo "${vId}" >>removed.txt
+        echo -e "${vId}\t${removed[${vId}]}" >>removed.txt
     done
     # read targets
     targetList=$(sed 1,2d ${playlistFile})
@@ -233,10 +238,14 @@ EOT
             fi
             pos=$(assumePosition ${i} ${id} ${publishedAt})
             if [[ pos -ge 0 ]]; then
+                if [[ "${endTimeInScope}" > "${publishedAt}" ]]; then
+                    echo "found, but too old ${targets[$i]}, id=${id}, title=${title}"
+                    continue
+                fi
                 # insert video to playlist
                 echo "FOUND ${targets[$i]}, id=${id}, assumePosition=${pos}"
-                curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json # commented for test
-                curl -s -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId2}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":0}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json # commented for test
+                curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
+                curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId2}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":0}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
                 updatePlaylists "${playlistId}" "${playlistFile}"
             else
                 echo "exist ${targets[$i]}, id=${id}"
