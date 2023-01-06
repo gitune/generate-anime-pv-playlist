@@ -167,7 +167,7 @@ while IFS=$'\t' read -r cId cName; do
     fi
     sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
     echo "${sResults}" >>search_results.json
-    echo "${sResults}" | jq -r ".items[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+    echo "${sResults}" | jq -r ".items[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")) and (.snippet.publishedAt > \"${endTimeInScope}\"))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
     if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
         channelsPlaylists[${cId}]="${plId}:$((nowInSec + $(generateRandomExpiry)))"
     fi
@@ -239,9 +239,6 @@ EOT
             pos=$(assumePosition ${i} ${id} ${publishedAt})
             if [[ pos -lt 0 ]]; then
                 echo "exist ${targets[$i]}, id=${id}"
-                continue
-            elif [[ "${endTimeInScope}" > "${publishedAt}" ]]; then
-                echo "found, but too old ${targets[$i]}, id=${id}, title=${title}"
                 continue
             fi
             # insert video to playlist
