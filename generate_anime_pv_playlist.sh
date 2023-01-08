@@ -61,7 +61,7 @@ assumePosition() {
     for i in $(seq $1 -1 0); do
         # playlistをスキャンして自分の前のPVを探す
         filtered=$(echo "${playlistItems}" | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-            grep -in "${targets[$i]}" | cat) # avoid exit when no result
+            egrep -in "${targets[$i]}" | cat) # avoid exit when no result
         while IFS=$'\t' read -r numId title description publishedAt; do
             if [[ -z "${numId}" ]]; then
                 # no result
@@ -226,7 +226,7 @@ EOT
     # check new videos
     for i in ${!targets[@]}; do
         searchResults=$(cat search_results.tsv | uconv -x '[\u3000,\uFF01-\uFF5D] Fullwidth-Halfwidth' | \
-            grep -i "${targets[$i]}" | tac)
+            egrep -i "${targets[$i]}" | tac)
         while IFS=$'\t' read -r publishedAt id title description; do
             if [[ -z "${id}" ]]; then
                 # no result
