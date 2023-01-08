@@ -121,6 +121,7 @@ generateRandomExpiry() {
 }
 
 # ======== main ========
+echo "$(date --iso-8601=seconds) START updating playlists. ========"
 nowInSec=$(date +%s)
 startTimeInScope=$(jq -rn "now - (86400 * 30)|todate") # 30 days before
 
