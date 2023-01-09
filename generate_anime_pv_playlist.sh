@@ -81,6 +81,10 @@ assumePosition() {
         done <<EOT
 ${filtered}
 EOT
+        if [[ prev -ge 0 ]]; then
+            # found
+            break
+        fi
     done
     echo $((prev + 1))
 }
