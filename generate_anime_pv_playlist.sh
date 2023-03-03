@@ -11,7 +11,7 @@ set -e
 cd $(dirname $0)
 
 # constants
-KEYWORDS="PV|CM|OP|オープニング|ED|エンディング|紹介|ティザー|Teaser|Trailer|番宣|キャラクター|劇中曲|挿入歌|イントロダクション|ライブシーン|告知映像|トレーラー"
+KEYWORDS="PV|CM|OP|オープニング|ED|エンディング|紹介|ティザー|Teaser|Trailer|番宣|キャラクター|劇中曲|挿入歌|イントロダクション|ライブシーン|告知映像|トレーラー|主題歌"
 
 # functions
 getAllResults() {
