@@ -187,7 +187,7 @@ declare -A tbcVideos
 if [[ -f tbc_playlist.txt ]]; then
     echo "get videos from TBC playlist"
     playlistId=$(cat tbc_playlist.txt | sed -n 1P)
-    tbcResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50")
+    tbcResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${playlistId}&part=snippet&maxResults=50")
     echo "${tbcResults}" | jq -r ".items[]|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
     playlistItems=$(echo "${tbcResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.id]|@tsv')
     while IFS=$'\t' read -r videoId id; do
