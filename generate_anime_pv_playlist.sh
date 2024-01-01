@@ -177,12 +177,28 @@ while IFS=$'\t' read -r cId cName; do
         channelsPlaylists[${cId}]="${plId}:$((nowInSec + $(generateRandomExpiry)))"
     fi
 done <channels.tsv
-cat search_results.tsv.tmp | sort | uniq >search_results.tsv
-rm -f search_results.tsv.tmp
 backupFile channelsPlaylists.tsv
 for cId in "${!channelsPlaylists[@]}"; do
     echo -e "${cId}\t${channelsPlaylists[${cId}]}" >>channelsPlaylists.tsv
 done
+
+# process TBC playlist =============
+declare -A tbcVideos
+if [[ -f tbc_playlist.txt ]]; then
+    echo "get videos from TBC playlist"
+    playlistId=$(cat tbc_playlist.txt | sed -n 1P)
+    tbcResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50")
+    echo "${tbcResults}" | jq -r ".items[]|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+    playlistItems=$(echo "${tbcResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.id]|@tsv')
+    while IFS=$'\t' read -r videoId id; do
+        tbcVideos[${videoId}]="${id}"
+    done <<EOT
+${playlistItems}
+EOT
+fi
+
+cat search_results.tsv.tmp | sort | uniq >search_results.tsv
+rm -f search_results.tsv.tmp
 
 # process per each playlist ========
 accessToken=$(getAccessToken)
@@ -251,6 +267,11 @@ EOT
             curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":${pos}}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
             curl -s --compressed -H "Content-Type: application/json" -H "Authorization: Bearer ${accessToken}" -d "{\"snippet\":{\"playlistId\":\"${playlistId2}\",\"resourceId\":{\"videoId\":\"${id}\",\"kind\":\"youtube#video\"},\"position\":0}}" "https://www.googleapis.com/youtube/v3/playlistItems?part=snippet" >>add_results.json.log # commented for test
             updatePlaylists "${playlistId}" "${playlistFile}"
+            # remove the video from TBC playlist
+            if [[ -n "${tbcVideos[${id}]}" ]]; then
+                echo "removed from TBC playlist, id=${id}"
+                curl -s --compressed -X DELETE -H "Authorization: Bearer ${accessToken}" -o - "https://www.googleapis.com/youtube/v3/playlistItems?id=${tbcVideos[${id}]}" >>add_results.json.log 2>&1 # commented for test
+            fi
         done <<EOT
 ${searchResults}
 EOT
