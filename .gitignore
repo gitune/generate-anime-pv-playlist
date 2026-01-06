@@ -4,3 +4,4 @@
 *.backup
 *.log*
 *.old
+*.id

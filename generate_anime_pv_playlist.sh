@@ -11,7 +11,7 @@ set -e
 cd $(dirname $0)
 
 # constants
-KEYWORDS="PV|CM|OP|オープニング|ED|エンディング|紹介|ティザー|Teaser|Trailer|番宣|キャラクター|劇中曲|挿入歌|イントロダクション|ライブシーン|告知映像|トレーラー|主題歌|解説動画|本予告|特別映像|Music Video|ボイスドラマ|ミニアニメ|科学講座|劇場|予告編|スペシャルムービー|ミュージッククリップ|ピックアップシーン|プロモーションリール|ショートアニメ|カルテ|ミニドラマ|紹介動画|オーディオドラマ|選手名鑑|告知動画|通信"
+KEYWORDS="PV|CM|OP|オープニング|ED|エンディング|紹介|ティザー|Teaser|Trailer|番宣|キャラクター|劇中曲|挿入歌|イントロダクション|ライブシーン|告知映像|トレーラー|主題歌|解説動画|本予告|特別映像|Music Video|ボイスドラマ|ミニアニメ|科学講座|劇場|予告編|スペシャルムービー|ミュージッククリップ|ピックアップシーン|プロモーションリール|ショートアニメ|カルテ|ミニドラマ|紹介動画|オーディオドラマ|選手名鑑|告知動画|通信|MV"
 
 # functions
 getAllResults() {
@@ -33,7 +33,7 @@ getAllResults() {
         results="${results}${result}"
         nextPageToken=$(echo "${result}" | jq -r .nextPageToken)
         if [[ -n "$2" ]]; then
-            oldest=$(echo "${result}" | jq -r '.items[]|.snippet.publishedAt' | sort | head -1)
+            oldest=$(echo "${result}" | jq -r '.items//[]|.[]|.snippet.publishedAt' | sort | head -1)
             if [[ "$2" > "${oldest}" ]]; then
                 olderExists=1
             fi
@@ -106,7 +106,7 @@ updatePlaylists() {
     result=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&part=snippet&maxResults=50&playlistId=$1")
     #result=$(cat $2.json) # for test
     echo "${result}" >$2.json
-    playlistItems=$(echo "${result}" | jq -r '.items[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
+    playlistItems=$(echo "${result}" | jq -r '.items//[]|.[]|[.snippet.resourceId.videoId,.snippet.title,.snippet.description,.snippet.publishedAt]|@tsv')
     echo "LOAD $2, count(playlistItems)=$(echo "${playlistItems}" | wc -l)"
 }
 
@@ -149,7 +149,7 @@ fi
 cResults=$(getAllResults "https://www.googleapis.com/youtube/v3/subscriptions?key=${YOUTUBE_API_KEY}&part=snippet&channelId=${YOUTUBE_CHANNEL_ID}&maxResults=50&order=alphabetical")
 #cResults=$(cat subscriptions.json) # for test
 echo "${cResults}" >subscriptions.json
-echo "${cResults}" | jq -r '.items[]|[.snippet.resourceId.channelId,.snippet.title]|@tsv' >channels.tsv
+echo "${cResults}" | jq -r '.items//[]|.[]|[.snippet.resourceId.channelId,.snippet.title]|@tsv' >channels.tsv
 echo "count(channels)=$(cat channels.tsv | wc -l)"
 
 # use 2 days ago
@@ -161,7 +161,7 @@ while IFS=$'\t' read -r cId cName; do
     echo "get videos on ${cName}"
     if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
         cDetails=$(getAllResults "https://www.googleapis.com/youtube/v3/channels?key=${YOUTUBE_API_KEY}&id=${cId}&part=contentDetails")
-        plId=$(echo "${cDetails}" | jq -r '.items[]|.contentDetails.relatedPlaylists.uploads' | head -1)
+        plId=$(echo "${cDetails}" | jq -r '.items//[]|.[]|.contentDetails.relatedPlaylists.uploads' | head -1)
         if [[ -z "${plId}" ]]; then
             echo "CAUTION! no \"uploads\" playlist on ${cName}"
             continue
@@ -172,7 +172,7 @@ while IFS=$'\t' read -r cId cName; do
     fi
     sResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${plId}&part=snippet&maxResults=50" ${latestPublishedAt})
     echo "${sResults}" >>search_results.json
-    echo "${sResults}" | jq -r ".items[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")) and (.snippet.publishedAt > \"${startTimeInScope}\"))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+    echo "${sResults}" | jq -r ".items//[]|.[]|select((.snippet.title|test(\"#shorts\";\"i\")|not) and (.snippet.title|test(\"(${KEYWORDS})\";\"i\")) and (.snippet.publishedAt > \"${startTimeInScope}\"))|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
     if [[ -z "${channelsPlaylists[${cId}]}" ]]; then
         channelsPlaylists[${cId}]="${plId}:$((nowInSec + $(generateRandomExpiry)))"
     fi
@@ -188,8 +188,8 @@ if [[ -f tbc_playlist.txt ]]; then
     echo "get videos from TBC playlist"
     playlistId=$(cat tbc_playlist.txt | sed -n 1P)
     tbcResults=$(getAllResults "https://www.googleapis.com/youtube/v3/playlistItems?key=${YOUTUBE_API_KEY}&playlistId=${playlistId}&part=snippet&maxResults=50")
-    echo "${tbcResults}" | jq -r ".items[]|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
-    playlistItems=$(echo "${tbcResults}" | jq -r '.items[]|[.snippet.resourceId.videoId,.id]|@tsv')
+    echo "${tbcResults}" | jq -r ".items//[]|.[]|[.snippet.publishedAt,.snippet.resourceId.videoId,.snippet.title,.snippet.description]|@tsv" >>search_results.tsv.tmp
+    playlistItems=$(echo "${tbcResults}" | jq -r '.items//[]|.[]|[.snippet.resourceId.videoId,.id]|@tsv')
     while IFS=$'\t' read -r videoId id; do
         tbcVideos[${videoId}]="${id}"
     done <<EOT
@@ -212,8 +212,8 @@ for playlistFile in $(ls playlist_*.txt); do
     updatePlaylists "${playlistId}" "${playlistFile}"
     # update removed video list
     if [[ -f ${playlistFile}.json.old ]]; then
-        cat ${playlistFile}.json.old | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.old.ids
-        cat ${playlistFile}.json | jq -r '.items[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.ids
+        cat ${playlistFile}.json.old | jq -r '.items//[]|.[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.old.ids
+        cat ${playlistFile}.json | jq -r '.items//[]|.[]|.snippet.resourceId.videoId' | sort | uniq >${playlistFile}.json.ids
         diff ${playlistFile}.json.old.ids ${playlistFile}.json.ids | egrep "^<" | sed -r 's/^< (.*)$/\1/' | sort | uniq >removed.new
         while read vId; do
             removed[${vId}]=$((nowInSec + (86400 * 30))) # 30 days after
